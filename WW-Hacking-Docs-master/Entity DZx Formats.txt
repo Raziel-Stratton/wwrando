@@ -1,0 +1,1398 @@
+
+This file documents the format of various types of entities with .dzr and .dzs files.
+For entities that have parameters, it also documents their parameters and the corresponding bitmasks for them.
+
+### STAG:
+  04,4: ? Read in func drawVrKumo. float
+  09,1:
+    0x01 - Whether this stage is a dungeon (note that the dungeon boss stage doesn't count as a dungeon).
+    0xFE - The stage ID.
+      The stage's save info can be found in list 0x803C4F88. The stage ID is the index in that list.
+  0A,2:
+    0x0003 - Affects the type of map you get when you press up on the D-pad.
+      0 - Sea chart.
+      1 - Dungeon map.
+      2 - No map?
+      3 - No map?
+    0x0004 - ???
+    0x07F8 - Particle bank ID to load for this stage.
+      The filename of the particle bank to load is:
+      "files/res/Particle/Pscene%03d.jpc" % particle_bank_id
+    0xF800 - ???
+  0C,4:
+    0x000000FF - ? Read in func SetSchBit
+    0x00070000 - Stage type? Read in funcs drawSun, setGameStartStage, and checkRoofRestart
+      1 - Dungeon
+      3 - Boss
+      If this value is equal to 3, solid objects falling on the player do not cause the room to restart?
+  10,4:
+    0x00FF0000 - ? Read in func SetSchBit
+
+### RTBL:
+  RTBL (Room TaBLe) is responsible for loading in rooms when in a given part of a room. RTBL chunks appear in the stage.dzs file.
+  Which RTBL entry to use is determined by the collision group below the player. Collision groups have an RTBL index in their data to handle this. (The index can be FF for no RTBL entry in that location.)
+  For example, on the sea stage, each of the 50 rooms has its own unique entry in the sea stage's RTBL list. Outset for example has an RTBL entry specifying that both room 0 and room 44 (Outset itself) should be loaded. In the sea, room 0's role is to always be loaded regardless of which sector you're in. Room 0 has collision through the whole sea floor, a different group for each sector. Because this collision groups have different RTBL indexes set for each sector, room 0's collision on the sea floor causes different RTBL entries to be used when the player crosses over sector borders. This is what handles loading and unloading rooms on the sea.
+  Note that while in many cases (like the sea) the room number and the RTBL index will happen to be the same because each room only has one RTBL entry, this is not always the case. For example, the hub room in DRC has three different RTBL entries depending on what part of it you're in, because you can be near the doors to many different rooms in the hub room.
+  Main entry format:
+    00,4: Offset within this dzs file to this entry's subentry.
+  Sub entry format:
+    00,1: Number of rooms in this entry's rooms list.
+    01,1: "Reverb amount"
+    02,1: Boolean(?) for whether time should pass here.
+    03,1: ???
+    04,4: Offset within this dzs file to this entry's rooms list.
+  Rooms list:
+    Each room takes up 1 byte:
+    & 80 - room should be visible...?
+      If set, both bits & 02 and & 08 in 104,1 bitfield in this room's zone data will be set on. If not set, only bit & 02 will be set there.
+      loadRoom__20dStage_roomControl_cFiPUc is the function that handles setting those bits like this.
+    & 40 - ?
+      all the sea rooms have room 0 constantly loaded, and this bit is set for room 0 being there.
+      guess it loads the collision?
+    & 3F - Room number of this room.
+    Note about which bits to set:
+      For dungeons it seems like both bits 80 and 40 should be set for the current room (the one that owns this RTBL entry), while for non-current rooms neither bit should be set.
+      For the sea, it seems like room 0 should always have both bits 80 and 40 set, while whatever the room for the current sector is should have bit 80 set but not bit 40.
+      Perhaps bit 80 means the room's collision and entities should be loaded, while bit 40 means it's the "active" room...?
+
+### 2DMA:
+  36,1: Determines which island the player will be placed on when save and quitting.
+    0x0F - X coordinate of the island's sector.
+    0xF0 - Y coordinate of the island's sector.
+      The X and Y can both range from -3 to +3.
+      0,0 refers to the center of the map (the sector with Six-Eye Reef).
+      Positive X means right relative to the center, positive Y means down relative to the center.
+
+### FILI:
+  00,4:
+    0x00000001 - Enable fancy dark room lighting?
+    0x00000078 - Index of the dark room lighting type to use in list 803753A4 (dStage_roomControl_c::mDarkStatus)
+      Valid indexes: 0-7
+      Actually used indexes: 0 and 1?
+    0x00007F80 - drawDepth?
+    0x000C0000 - Wind type. Affects the strength of wind in this room.
+      0 - 0.3 strength.
+      1 - 0.6 strength.
+      2 - 0.9 strength.
+      3 - No wind.
+    0x00100000 - wind related?
+    0x1FE00000 - Particle bank ID to load for this stage.
+      This is used on the sea, where the stage doesn't specify a particle bank to load (0xFF) and instead each individual room does it.
+      The filename of the particle bank to load is:
+      "files/res/Particle/Pscene%03d.jpc" % particle_bank_id
+    0x40000000 - Prevent Song of Passing usage (sun and moon are not visible).
+
+### EVNT:
+  13,1: The switch index to check and set.
+
+### TRES:
+Treasure chests. (d_a_tbox)
+  params & 00F00000 - Chest appearance type.
+    0 - Light wood
+    1 - Dark wood
+    2 - Metal
+    3 - Big key
+  params & 000FF000 - Switch index for this chest having appeared/become openable.
+    If this is FF, the chest is there and openable from the beginning, without a switch needing to be set.
+  params & 00000F80 - Chest open flag for having opened this chest.
+  params & 0000007F - Chest behavior type.
+    0 - Normal chest with no special behavior.
+    1 - Only appears once a switch is set.
+    2 - Only appears once all enemies in the room are dead.
+    3 - Chest cannot be opened until a switch is set. (Used for the chests in FW that have eye flowers on them.)
+    4 - Chest is transparent and cannot be opened. It will become fully visible and openable once a certain switch is set.
+    5 - When this chest is created, it teleports downwards onto whatever is below it (can be an actor). If the thing below it moves up and down (like a raft) the chest will follow, and if the thing below it is destroyed (like a boulder) the chest will fall to the ground.
+    6 - Chest is invisible, but there is a triforce emblem on the ground below it. The chest will appear once a certain switch is set.
+    7 - Consider this chest's open flag to be in stage ID 1 instead of the actual stage ID of the current stage.
+    8 - Only appears once a switch is set. Also consider this chest's open flag to be in stage ID 1 instead of the actual stage ID of the current stage.
+  aux_params & 0x003F - Room number.
+  aux_params & 0xFFC0 - Unused.
+  aux_params_2 & 0x00FF - Switch index to set when opening this chest, or 0xFF for none.
+  aux_params_2 & 0xFF00 - Item ID in this chest.
+
+### ACTR:
+NpcSo: Fishman. (d_a_npc_so)
+  params: None.
+TagSo, TagMSo: Trigger area for a fishman. (d_a_tag_so)
+  There are multiple of these per sector, only one is active at a time.
+  There seem to be 5x TagSo and 1x TagMSo in each sector. Difference between the two types is currently unknown.
+  params & 0x000000FF
+  params & 0x0000FF00
+  params & 0x00FF0000
+item: A field item lying on the ground. (no REL file, item code is part of the core engine)
+  params & 0x000000FF - The item ID.
+  params & 0x0000FF00 - The item pickup flag to set.
+    If this is in the range of 00 to 3F, it will set an item pickup flag in the current stage info.
+    If this is in the range of 40 to 4F, it will set a zone bit (in the range 00 to 0F, just subtract 40 from it).
+    Note: If the item ID is 4B (Blue Chu Jelly), this item will not set an item pickup flag. In this case, this number is instead the switch index in stage ID E's stage info's mem bits to set to keep track of this Blue Chu Jelly being picked up globally.
+  params & 0x00FF0000 - Enable spawn switch index.
+  params & 0x03000000 - Behavior type.
+    0 - Normal for dropped items. Fades away after some time.
+    1 - Float in place, not doing anything but rotating. Not affected by gravity, and doesn't fade away.
+    2 - Same as 0 maybe?
+    3 - Normal for placed items. Does not fade away after some time.
+  params & 0xFC000000 - Item action.
+    Known possible values:
+    0 - Normal.
+    4 - ?
+    5 - The item makes a ding sound effect
+    8 - ?
+    A - ?
+    B - ?
+    C - ?
+  aux_params_2 & 0x00FF - Activation switch index.
+    The item will be visible and animated, but can't be picked up and will not start to fade away until this switch is set.
+    Used for a rupee inside a block of ice in the vanilla game to make it only activate once the ice is melted.
+    FF - No activation switch needed, always active.
+itemDek: The Deku Leaf spawned on one of the Deku Tree's branches. (d_a_deku_item)
+  params & 0x000000FF - The item pickup flag to set.
+BFlower, VbakH: Bomb flowers. (d_a_bflower)
+  params & 0x000000F0 - Type.
+    0 - Normal ripe bomb flower. (BFlower)
+    1 - Dried out bomb flower. (VbakH)
+  params & 0x0000FF00 - The switch index for this bomb flower being watered.
+Eskban: Boulder from the Dragon Roost Cavern entrance. (d_a_obj_eskban)
+  params & 0x000000FF - The switch index for this boulder being destroyed.
+Ebrock, Ekao, Ebrock2: Boulder. (d_a_stone2)
+  Ebrock  - Normal big boulder.
+  Ekao    - Big boulder in the shape of a stone face that needs power bracelets.
+  Ebrock2 - Smaller boulder.
+  params & 0x0000003F - Affects what item(s) to spawn.
+    This parameter gets passed as argument r4 to createItemFromTable when the object is destroyed.
+    If in the range 00-1F:
+      This is the item ID to spawn.
+    If in the range 20-3F:
+      Subtract 0x20 from this parameter to get the index in the random item table. https://wiki.cloudmodding.com/tww/ItemTable.bin
+  params & 0x000000C0 - 
+  params & 0x0000FF00 - The switch index for this boulder being destroyed.
+  params & 0x007F0000 - 
+  params & 0x07000000 - Affects the type of stone.
+    4 - Big stone head. (Ekao)
+  params & 0x70000000 - 
+  737F6C3F - Outset head
+  F37F243F - Headstone head
+Md1: Medli. (d_a_npc_md)
+  params & 0x000000FF - ?
+  params & 0x0000FF00 - ?
+  params & 0x00FF0000 - ?
+Mori1: Gate of wooden columns. (d_a_mdoor)
+  params & 0x000000FF - Switch index
+  params & 0x0000FF00 - Type
+  params & 0x00FF0000 - Tool ID
+  params & 0xFF000000 - Shape type
+  Example params:
+  FFFF00FF
+  FFFF012D
+VmcBS: Dirt patch Makar can plant a seed in. (d_a_obj_vmc)
+  params & 0x0000FF00 - Switch index
+AND_SW0: A switch AND operator. (d_a_andsw0)
+  params & 000000FF - Number of switches to check, sequentially starting at the first switch index to check.
+    If this number is FF, it's a special case for the Forest of Fairies.
+  params & 0000FF00 - Behavior type.
+    00 - Normal. Once all switches to check have been set, it sets the switch index to set.
+    01, FF - Once all the switches have been set, it continuously checks for one to be unset, and unsets switch_index when that happens, then goes back to checking for all switches to be set again.
+    02 - Checks for any one of the switches to check being set, then starts a timer. If all of the remaining switches to check are set within that time limit, the switch to set is set. If not, all the switches to check are unset.
+    03 - Waits 0d65 frames after the switches it checks are set before setting switch_index.
+  params & 00FF0000 - First switch index to check.
+    If this is 00, the first switch index to check is considered to be switch_index_to_set+1.
+  params & FF000000 - Switch index to set.
+  aux_params_1 & 00FF - The event index to start once the switch has been set. Index in this stage's EVNT list.
+    Read at 0AC8 in func daAndsw0_Create(fopAc_ac_c *)
+  aux_params_2 & 00FF - For behavior type 02, this times 0d15 is the time limit in frames within the player must set all of the switches to check, starting at the moment they set the first switch.
+AND_SW2: A switch AND operator. It checks multiple sequential switches, and once all of them are set it sets another switch of its own. (d_a_andsw2)
+  params & 0x000000FF - Number of switches to check. (Sequentially, starting from the first specified switch index.)
+  params & 0x0000FF00 - Type?
+  params & 0x00FF0000 - Switch index to set once all the checked switches are set.
+  params & 0xFF000000 - First switch index to check.
+  aux_params_1 & 00FF - The event index to start, in this stage's EVNT list?
+    Read at 0150 in func daAndsw2_c::getEventNo(void)
+  aux_params_2 & 00FF - Delay in half seconds (15 frames) after all the switches to check are set before the switch to set should be set?
+    FF - Defaults to no delay instead.
+    Read at 0180 in func daAndsw2_c::getTimer(void)
+ALLdie: Entity that sets a switch when all enemies in the room are dead. (d_a_alldie)
+  params & 0x0000FF00 - Switch index to set.
+TagCb13: Something related to Makar when he gets captured by floormasters (d_a_tag_md_cb)
+  params & 0x0000FFFF - 
+  params & 0x00FF0000 - Switch index to check
+  params & 0xFF000000 - 
+YLzou: Hero of Time statue in Hyrule. (d_a_obj_YLzou)
+  params & 0x000000FF - Switch index to check if the statue should be moved out of the way. If FF, the statue will be moved by default.
+Mhsg4h: Ladder. (d_a_obj_ladder)
+  params & 0x00000007 - Which model to use. 0-4 are valid. From shortest to longest: 4, 0, 1, 2, 3
+  params & 0x0000FF00 - Switch index to check. The ladder falls when this is set.
+  params & 0x00FF0000 - event index?
+TagMk: Item hidden inside a tree? (d_a_tag_mk)
+  params & 0x000000FF - type? can be 1, 2, 3, 4, 5, ?
+  params & 0x0000FF00 - a switch index?
+  params & 0x00FF0000 - a switch index?
+bridge: Bridge. (d_a_bridge)
+  params & 0x000000FF - bitfield?
+    & 0x01 - Which plank model to use.
+      0 - obm_bridge.bdl (plain wood)
+      1 - obm_bridge2.bdl (wood with metal reinforcement)
+    & 0x02 - ?
+      0 - Calculate how many planks there should be as follows:
+        If bridge_length is greater than 1300.0:
+          num_planks = floor(bridge_length / 75.0)
+        Otherwise:
+          num_planks = floor(bridge_length / 70.5)
+      1 - ? maybe only half a bridge?
+    & 0x04 - ?
+      if this is 1, it makes bit &0x01 also be forcibly switched to 1?
+    & 0x08 - Affects the type of ropes holding it up.
+      0 - Held up by cuttable ropes.
+      1 - Held up by indestructible ropes.
+    FF - Defaults to 00 instead.
+  params & 0x0000FF00 - 
+  params & 0x00FF0000 - Path index.
+  Example params:
+  FF12FF04 - short bridge
+  FF11FF00 - medium bridge
+  FF00FF00 - long bridge
+  How to create a bridge:
+    Create the actor named "bridge".
+    Create two RPPN path waypoints for the start and end of the bridge.
+    Create an RPAT path, with num_points = 2, associated_path_index = -1, unknown2 = 0xFF, is_loop = false, padding = 0xFFFF, and first_waypoint_offset = (offset within the list of RPPN path waypoints to the first one we created. aka index*0x10)
+    bridge's param 0xFF000000 should be FF.
+    bridge's param 0x00FF0000 should be the index of the RPAT path.
+    bridge's param 0x0000FF00 should be FF.
+    bridge's param 0x000000FF should be ...? try both 00 and 04. it's a bitfield.
+Ecube: Pushable/pullable cube. (d_a_obj_movebox)
+  params & 0x0000003F - Affects what item(s) to spawn.
+    This parameter gets passed as argument r4 to createItemFromTable when the object is destroyed.
+    If in the range 00-1F:
+      This is the item ID to spawn.
+    If in the range 20-3F:
+      Subtract 0x20 from this parameter to get the index in the random item table. https://wiki.cloudmodding.com/tww/ItemTable.bin
+  params & 0x0000FF00 - Switch index to set
+  params & 0x007F0000 - Item pickup flag to set, or 0x7F for none.
+  params & 0x0F000000 - Type of box. Controls which model to use for this box. (stored to entity+5F8)
+  params & 0x40000000 - 
+  params & 0x80000000 - ?? (only works for certain types of boxes)
+  Example params:
+  8C004500 - both Ecubes at start of dragon roost island
+  8C00FF00 - all Ecubes inside angular isles
+kotubo, ootubo1, Odokuro: Pot/skull. (d_a_tsubo)
+  params & 0x0000003F - Affects what item(s) to spawn.
+    This parameter gets passed as argument r4 to createItemFromTable when the object is destroyed.
+    If in the range 00-1F:
+      This is the item ID to spawn.
+    If in the range 20-3F:
+      Subtract 0x20 from this parameter to get the index in the random item table. https://wiki.cloudmodding.com/tww/ItemTable.bin
+  params & 0x00003F00 - 
+    01 - Has 1 Boko Stick in it.
+    02 - Has 2 Boko Sticks in it.
+    03 - Has 3 Boko Sticks in it.
+    3F - Normal.
+  params & 0x0000C000 - 
+  params & 0x007F0000 - Item pickup flag for the item spawned.
+  params & 0x0F000000 - Type.
+    0 - Small pot (kotubo)
+    1 - Large pot (ootubo1)
+    2 - Water pot (Kmtub)
+    3 - Barrel (Ktaru)
+    4 - Stool (Ostool)
+    5 - Skull (Odokuro)
+    6 - Bucket (Okioke)
+    7 - Nut (Kmi00)
+    8 - Golden crate (Hbox2S)
+    9 - TotG pillar statue (does not light up when picked up, but if a real TotG pillar statue is picked up then both of these will light up)
+    A - 
+    B - 
+    C - 
+    D - Seed (Kmi02)
+    E - Fancy pot (Ptubo)
+    F - Wooden crate (KkibaB)
+  params & 0x70000000 - 
+  params & 0x80000000 - 
+  aux_params_2 & 0x00FF - Enable spawn switch.
+  Example params:
+  707FFF16 - small pot that drops fairy
+  7106FF1F - large pot that drops joy pendant only one time
+  757FC03F - skull on the middle island of forest haven that appears when you place a tingle bomb. drops no item.
+Ksaku, Dsaku: Boarded up wall/fence. (d_a_saku)
+  params & 0x0000000F - 
+  params & 0x000000F0 - Type.
+    0 - Weak one that can be destroyed with a normal sword. (Ksaku)
+    1 - Strong one. (Dsaku)
+  params & 0x0000FF00 - Switch index for the bottom half being destroyed.
+  params & 0x00FF0000 - Switch index for the top half being destroyed.
+Piwa: Stone tablet with writing on it. (d_a_obj_paper)
+  params & 0x0000FFFF - Message ID to show.
+  params & 0x000F0000 - Might be which model to use for the tablet? Or which texture?
+Pirates: Pirate ship. (d_a_obj_pirateship)
+  params & 0xFF000000 - Type?
+  params & 0x00FF0000 - May be a room path index for the ship to follow?
+  params & 0x0000FF00 - 0 or 1 for the type of door.
+    Specifically this seems to change what the parameters of the created door (an instance of d_a_knob00) should be.
+      0 - Use parameters 101000FF
+      1 - Use parameters 101004FF
+  params & 0x0000000F - 0 or 1 for whether it should play some sound effect or not?
+  Example params:
+    00FF0001 - Outset pirate ship on layers 0 and 8
+    04FF0000 - Outset pirate ship on layer 2
+    03FF0001 - Outset pirate ship on layer 10
+    01FF0001 - When Link is with the Pirates riding to Forsaken Fortress near the start of the game
+    02FF0000 - Outside FF1
+    FFFF0100 - Windfall pirate ship
+Warpts1, Warpts2, Warpts3: Cyclic warp pot. (d_a_obj_warpt)
+  params & 0x0000000F - Which warp pot this is.
+    Affects which bit in the event register is set when you unlock this pot:
+      2 - Set bit 1.
+      3 - Set bit 2.
+      4 - Set bit 4.
+      If this value is anything other than 2, 3, or 4, this becomes a noncyclic warp pot instead (see below).
+    Gets stored to entity+0x2B4,4
+  params & 0x000000F0 - Which event register of unlocked warp jars to use.
+    Index in list 2DC0 (entry length 2).
+      0 - A207 (DRC)
+      1 - A107 (FW)
+      2 - A007 (Unused)
+      3 - 9F07 (WT)
+      4 - A307 (ET)
+      5 - A407 (Unused)
+    Gets stored to entity+0x2B8,4
+  params & 0x0000FF00 - Where to warp when going to the first warp pot in this dungeon.
+    This is an SCLS exit index in this room's SCLS list.
+    Gets stored to entity+0x2A0,4
+  params & 0x00FF0000 - Where to warp when going to the second warp pot in this dungeon.
+    This is an SCLS exit index in this room's SCLS list.
+    Gets stored to entity+0x2A4,4
+  params & 0xFF000000 - Where to warp when going to the third warp pot in this dungeon.
+    This is an SCLS exit index in this room's SCLS list.
+    Gets stored to entity+0x2A8,4
+  aux_params & 0x00FF - The switch index of whatever is blocking this pot's top being destroyed.
+    If this is FF, the thing blocking the top will be a normal lid that is part of the pot actor.
+    If this is any other value, you will need to place a separate actor on top of the warp pot that sets the relevant switch when it's destroyed. The pot itself will have no lid - so the player can actually use it if you don't block the top properly, despite the warp pot thinking it should be locked. Note that because it thinks it's locked, the smoke particle coming from the pot will seethe outwards instead of upwards.
+  aux_params & 0xFF00 - Unused for cyclic warp pots.
+  aux_params_2 & 0x00FF - If this is 0xFF, the warp pot will play a sound effect when unlocked. Otherwise it won't.
+  aux_params_2 & 0xFF00 - If this is 0xFF, the warp pot will be locked by default. Otherwise it will be unlocked.
+  first warp pot in DRC:  03020102
+  second warp pot in DRC: 02010003
+  third warp pot in DRC:  04030204
+Warpt, Warpnt: Noncyclic warp pot. (d_a_obj_warpt)
+  params & 0x0000000F - Type of warp pot.
+      0 - Noncyclic warp pot that started off locked (Warpt).
+      1 - Noncyclic warp pot that is unlocked (Warpnt).
+    If this value is 2, 3, or 4, this becomes a regular warp pot instead (see above).
+    Gets stored to entity+0x2B4,4
+  params & 0x00000FF0 - Seems to be an unused SCLS index that points to the spawn coming out of this warp pot.
+    Gets stored to entity+298,4
+  params & 0x000FF000 - Where to warp when successfully going into this warp pot.
+    This is an SCLS exit index in this room's SCLS list.
+    Gets stored to entity+29C,4
+  aux_params & 0x00FF - Switch index for this warp pot being opened.
+    For unlocked pots (type 1), this switch is set by default when the warp pot is created.
+    Gets stored to entity+2AC,4
+  aux_params & 0xFF00 - Switch index for the other warp pot connected to this one being opened.
+    Gets stored to entity+2B0,4
+  aux_params_2 - Unused for noncyclic warp pots.
+  Example params:
+    Unlocked lower warp pot in puppet ganon's room:
+      params: 000 02 03 1
+      aux_params: 08 07
+      aux_params_2: 0000
+    Locked upper warp pot in puppet ganon's room:
+      params: 000 03 02 0
+      aux_params: 07 08
+      aux_params_2: 0000
+wiz_r: Wizzrobe. (d_a_wz)
+  params & 0x000000FF - Behavior type.
+    00 - Shoots fireballs.
+    01 - Spawns enemies and shoots fireballs.
+    02 - Mini-boss Wizzrobe.
+      Behaves similar to type 1.
+    03 - ?
+      Behaves similar to type 0.
+    0A - Fireball?
+    0C - Spawner orb? white orb that actually spawns the enemies
+    0D - Spawner orb? white orb that actually spawns the enemies
+    FF - Defaults to 00 instead.
+  params & 0x0000FF00 - Disable spawn on death switch.
+  params & 0x00FF0000 - Enable spawn switch.
+  params & 0xFF000000 - Path index for the Wizzrobe to appear on.
+    The Wizzrobe seems to teleport to random points on the path.
+    For type 0 Wizzrobes, this can be FF for no path, and it will just repeatedly teleport around its initial position.
+    But for type 1 Wizzrobes, having no path will crash the game.
+    For type 1 Wizzrobes, this path must also have a "next path"/"AssociatedPathIndex" specified, and that next path's two points will be used as the positions to spawn the two enemies this Wizzrobe creates.
+    If there is no next path, type 1 Wizzrobes will crash the game.
+  aux_params_2 & 00FF - Which enemy summon table to use.
+    If this is FF, it defaults to 00.
+    The list of possible enemy actor IDs to summon is enemy_name_dt$6153.
+    This parameter determines which of the possible spawn tables within that list to use. Each table is 0x10 bytes long.
+    Each table has 4 entries in it. The Wizzrobe seems to select which of the 4 to start on randomly, and then cycles through them in order?
+    Each entry is composed of 2 halfwords. The first halfword is the first enemy actor ID to spawn. The second halfword is either the second enemy actor ID to spawn, or 0x7FFF for no second enemy.
+    The parameters of each enemy to spawn is in list enemy_arg_dt$6154. Each entry in this list is composed of 2 words instead of 2 halfwords, but other than that you access entries the same as above (first use the summon table index parameter, then the random entry index).
+    The number of each enemy to spawn at once is in list birth_dt$6155. Works the same as above.
+Homen1, Homen2: Stone head with a hookshot target on it. (d_a_obj_homen)
+  params & 0x0000007F - Item pickup flag for the item inside it.
+  params & 0x00000F00 - Type.
+    0 - Large stone head. (Homen1)
+    1 - Small stone head. (Homen2)
+  params & 0x0003F000 - Affects the item spawned? Like what item table it chooses from?
+  params & 0x003C0000 - Might affect what enemy is spawned when you remove this statue from the wall?
+    2 - Bokoblin?
+    3 - ?
+    F - No enemy
+  params & 0xFF000000 - Switch index for ?
+  Example params (the 4 from that tall basement room in Wind Temple where you need to kill all enemies):
+  980BF105
+  993CA17F
+  9A3EC17F
+  9B0FF106
+c_green, c_red, c_blue, c_black, c_kiiro: ChuChu. (d_a_cc)
+  params & 0x000000FF - Behavior type.
+    00 - Normal.
+    01 - Falls from the ceiling.
+    02 - ChuChu never spawns in properly.
+      It's impossible to see or kill, but still counts as alive so it will prevent you from completing the room.
+    03 - Does not attack Link, just moves around randomly.
+      This behavior type is intended for Blu ChuChus. It causes Grappling Hook to not steal Chu Jelly from them, and Hookshot to not pull them to Link (only makes it stand up if in a puddle).
+    04 - Hiding in a pot.
+    FF - Defaults to 00 instead.
+    If the value located at 803E75A8,2 is not 0, this value will be forcibly changed to 03.
+  params & 0x0000FF00 - Type of ChuChu.
+     0 - Green
+     1 - Red
+     2 - Blue
+     3 - Dark
+     4 - Yellow
+     A - Switches itself to 0 (Green), and overrides its range with 60000.0.
+     B - Switches itself to 1 (Red), and overrides its range with 60000.0.
+     C - Switches itself to 2 (Blue), and overrides its range with 60000.0.
+     D - Switches itself to 3 (Dark), and overrides its range with 60000.0.
+     E - Switches itself to 4 (Yellow), and overrides its range with 60000.0.
+     F - Switches itself to 1 (Red), overrides its range with 60000.0, and also makes it vulnerable to dying from things it normally wouldn't like Hookshot, Boomerang, and Grappling Hook.
+     The purpose of the duplicate A-E types is for Wizzrobe spawning - most of the ChuChus spawned by Wizzrobes have their type randomly selected (Green, Red, Yellow, MAYBE Dark??), but ones with the A-E type specified will always spawn as that type, with no randomness.
+  params & 0x00FF0000 - This number multiplied by 10.0 is used as a range within it notices the player.
+    00 or FF:
+      If behavior type is 1, these default to a range of 1200.0.
+      If behavior type is 4, these do not default to anything, and actually use 0 or 255*10.0 as the range. Though I'm not sure if the range actually affects how type 4s act anyway?
+      If behavior type is anything else, these default to a range of 1000.0.
+  params & 0xFF000000 - Disable spawn switch.
+    TODO: how does this work for blue chuchus...?
+  Example params:
+  0B1E0203 - Blue ChuChu on Eastern Fairy Island.
+  FFFF04FF - Yellow ChuChu in first room of TotG.
+  C0FF0001 - Green ChuChu in WT.
+  FF500101 - Red ChuChu in DRC.
+  FF460300 - Dark ChuChu in ET.
+  FFFF01FF - Red ChuChu in ChuChu cave.
+Hhbot1N: Heavy switch you must depress with the iron boots. (d_a_obj_swheavy)
+  params & 07000000 - Type maybe?
+  params & 0000FF00 - Switch index to set when depressed.
+  Example params:
+  03013200 - Tall Basement Room in Wind Temple
+gmos, gmos_g, gmos_f: Mothulas. (d_a_gm)
+  params & 000000FF - Which wings this Mothula starts out already missing. Bitfield.
+    & 01 - Missing lower right wing.
+    & 02 - Missing lower left wing.
+    & 04 - Missing upper right wing.
+    & 08 - Missing upper left wing.
+    FF - Defaults to 00 (not missing any wings).
+    If this is a wingless Mothula type, it automatically sets this to 0F so it's missing all wings.
+    If this is a winged Mothula type, and you manually set this to 0F so it's missing all wings, it bugs out. Instead of becoming a wingless Mothula type, it will fly with no wings, and also be immune to all damage (not counting being shattered with Ice Arrows or killed with Light Arrows).
+    If this is a wing instead of an actual Mothula (i.e. wing type is 1 or 2), then this params & 000000FF is instead an int from 01-04 for which wing it is:
+      01 - Lower right wing.
+      02 - Lower left wing.
+      03 - Upper right wing.
+      04 - Upper left wing.
+  params & 0000FF00 - Wing type.
+    00 - Not a wing, this is actually a Mothula.
+    01 - Wing that falls down while spinning.
+    02 - Wing that floats down gently.
+    FF - Defaults to 00.
+  params & 00FF0000 - Type.
+    00 - Mini-boss Winged Mothula.
+    01 - Wingless Mothula.
+    02 - Common enemy Winged Mothula.
+    FF - Same as 00.
+    Read at 8030 in func daGM_Create(fopAc_ac_c *)
+  params & FF000000 - Disable spawn on death switch.
+    FF - Invalid.
+  aux_params_2 & 00FF - If 00, do not set switch at params & FF000000, even if it is valid.
+Hmos1, Hmos2, Hmos3: Beamos and laser barriers. (d_a_obj_bemos)
+  params & 000000FF - Varies depending on the type of Beamos.
+    For Red and Blue Beamos: This number multiplied by 100.0 plus 500.0 is the range within it will notice the player and start firing its laser.
+      Note that values here larger than 5 or so won't work as expected. The Beamos might notice you at higher ranges but it will wind up firing its laser into the floor, or trying to fire it at you but the laser is too short and is cut off.
+      FF - Defaults to a range of 500.0 instead.
+    For laser forcefields: Deactivation switch index.
+      When this switch is set the lasers will stop firing.
+      FF - Invalid.
+  params & 0000FF00 - Varies depending on whether this is a Red Beamos or a laser barrier. (No effect on Blue Beamos.)
+    For Red Beamos: This is the speed the head turns at, and whether it's clockwise or counterclockwise.
+      Signed byte.
+      If positive or zero: turn_speed = this*250 + 750
+      If negative: turn_speed = this*250 - 750
+      (Note: 0x4000 or 16384 turn speed is equal to 90 degrees per frame.)
+      Examples:
+        00 - 750
+        01 - 1000
+        03 - 1500
+        05 - 2000
+        FD - -1500
+    For laser barriers:
+      00 - Normal.
+      01 - Lasers only appear if the active Servant of the Tower is in the same room as this.
+      02 - Lasers have no solid collision. The player can walk through them if they just took damage and have iframes.
+      FF - Defaults to 00 instead.
+  params & 00FF0000 - Path index for the laser barrier's laser to follow.
+    One end of the barrier will be at one point, the other end at the other point.
+    No effect on actual Beamos types.
+    If this is not a valid path index and this is a laser barrier type, then it will just be half of the laser barrier (one of the wall decorations + one laser).
+  params & F0000000 - Type.
+    0 - Blue Beamos. Always fires at a specific spot. (Hmos1)
+    1 - Red Beamos. Tracks you. (Hmos2)
+    2 - Laser barrier. (Hmos3)
+  aux_params_2 & 003F - Affects what item it drops when the eye is destroyed. (Red and Blue Beamos only.)
+    This is argument r4 to createItemFromTable.
+  aux_params_2 & 1FC0 - Item pickup flag to give to the item it drops when the eye is destroyed. (Red and Blue Beamos only.)
+    7F - No permanent pickup flag, the Beamos will drop this item every time its eye is destroyed.
+  If this is a single laser (type is laser barrier and path index is invalid), then it has these paremeters:
+    aux_params_1 & FFFF - X rotation.
+      Read at 0E8C in func daBemos_c::CreateInit3(void)
+      Read at 0F40 in func daBemos_c::CreateInit3(void)
+      Read at 10D4 in func daBemos_c::CreateInit3(void)
+      Read at 1134 in func daBemos_c::CreateInit3(void)
+    aux_params_2 & FFFF - Z rotation...? doesn't seem to work
+      Read at 0E9C in func daBemos_c::CreateInit3(void)
+      Read at 0F50 in func daBemos_c::CreateInit3(void)
+      Read at 10E4 in func daBemos_c::CreateInit3(void)
+      Read at 1144 in func daBemos_c::CreateInit3(void)
+Ylesr00: Laser beam fired by a Hmos3 laser barrier, or by a Moblin statue. (d_a_beam)
+  params & 000000FF
+    Read at 0DEC in func daBeam_c::CreateInit(void)
+  params & 0000FF00
+    Read at 0DF0 in func daBeam_c::CreateInit(void)
+  params & 00FF0000
+    Read at 0F50 in func daBeam_c::CreateInit(void)
+  params & 0F000000
+    Read at 0FB8 in func daBeam_c::CreateInit(void)
+  params & 10000000 (WARNING: overlaps)
+    Read at 0FC8 in func daBeam_c::CreateInit(void)
+  params & 30000000 (WARNING: overlaps)
+    Read at 0FC4 in func daBeam_c::CreateInit(void)
+  params & C0000000
+    Read at 0BD4 in func daBeam_c::CreateInit(void)
+  aux_params_1 & FFFF
+    Read at 0C34 in func daBeam_c::CreateInit(void)
+    Read at 1118 in func daBeam_c::_execute(void)
+    Read at 12B8 in func daBeam_c::_execute(void)
+    Read at 1430 in func daBeam_c::_execute(void)
+    Read at 1D60 in func daBeam_c::wait_proc(void)
+  aux_params_2 & FFFF
+    Read at 1D70 in func daBeam_c::wait_proc(void)
+  Example params:
+  11000000 - Laser beam created by a Hmos3 that you can walk through (no solid collision).
+  41000000 - Laser beam created by a Hmos3 that you can't walk through (has solid collision).
+Ikada, ikada_h, ikadaS, ikada_u, Svsp: Various types of rafts/ships. (d_a_obj_ikada)
+  params & 0000000F - Type.
+    0 - Ikada   - Raft
+    1 - ikada_h - Beedle's shop ship
+    2 - ikadaS  - Submarine
+    3 - ikada_u - Beedle's special shop ship
+    4 - Svsp    - Salvage corp ship
+  If type is anything except 4:
+    params & 000003F0 - 
+    params & 0003FC00 - 
+    params & 03FC0000 - 
+    aux_params & 00FF - Unused?
+    aux_params & FF00 - Path index of the path for the ship to follow.
+  If type is 4 (Salvage corp):
+    params & 00FF0000 - Path index of the path for the ship to follow.
+Boko: Weapon lying on the ground. (d_a_boko)
+  params - What type of weapon.
+    0 - Boko stick. (Boko.arc)
+    1 - Bokoblin scimitar. (Nata.arc)
+    2 - Stalfos mace. (Club.arc)
+    3 - Darknut sword. (Tkwn.arc)
+    4 - Moblin spear. (Spear.arc)
+    5 - Phantom Ganon sword. (Pgsw.arc)
+Bk: Bokoblin. (d_a_bk)
+  params & 0000000F - Type.
+    stored to entity+2B4,1
+    0 - Normal
+    1 - Normal?
+    2 - In a pot waiting to ambush Link
+    3 - Hiding in a pot
+    4 - Stands guard
+    5 - Bokoblin being carried through the air.
+      Just floats with the carried animation if manually placed.
+      Can be attacked to make it fall down.
+    6 - Bokoblin operating a Forsaken Fortress searchlight.
+    7 - Looking up and jumping trying to reach Tetra
+    8 - Does not load in?
+      Not placed in the vanilla game.
+    9 - Crash
+    A - Mini-boss Bokoblin standing guard.
+      When it dies, a short event plays where the camera focuses on its death animation.
+      Used for the Bokoblin at the end of FF1.
+    B - Pink Bokoblin holding a telescope.
+      Overrides params & 00000020 trying to make the Bokoblin green.
+      Also sets a bool at entity+2DC to true to make it pink.
+      Also sets this type field to 4.
+    F - ?
+      Only used in debug test maps.
+      Sets entity+376,2 to 0x17 and entity+2BA,1 to 0.
+  params & 00000010 - Change switch behavior.
+    stored to entity+2B9,1
+    0 - The switch at params & FF000000, if it's valid, MUST be set for this Bokoblin to spawn. (Enable spawn switch.)
+    1 - The switch at params & FF000000 MUST NOT be set for this Bokoblin to spawn. (Disable spawn switch.)
+  params & 00000020 - Boolean to make the Bokoblin green and give it a wooden shield.
+    stored to entity+2D4,1
+  params & 000000C0 - What the Bokoblin should hold in its hand.
+    0 - Unlit torch
+    1 - Machete
+    2 - Lit torch
+    3 - Machete
+    Note: In the A_mori stage, no Bokoblins will hold anything in their hands regardless of this value.
+    stored to entity+2D5,1
+  params & 0000FF00 - unknown_4
+    stored to entity+2B5,1
+    This is multiplied by 10.0 - maybe this is the range the Bokoblin notices you in?
+    If this is FF, the range defaults to 500.0 (instead of 255*10.0).
+  params & 00FF0000 - Path index?
+    stored to entity+2B6,1
+  params & FF000000 - Switch index for whether this Bokoblin should exist or not.
+    stored to entity+2B7,1
+    See params & 00000010 for exactly what this switch affects.
+    - unknown_7
+    stored to entity+2B8,1
+  aux_params_2 & 00FF - Disable spawn on death switch.
+    00 - Invalid switch.
+    FF - Defaults to 00 instead.
+mo2: Moblin. (d_a_mo2)
+  params & 000000FF - Type.
+    00 - No lantern. Blue skin.
+    01 - Has a lantern. Brown skin.
+    05 - Moblin being carried through the air.
+      Just floats with the carried animation if manually placed.
+      Can be attacked to make it fall down.
+    0F - No lantern. Blue skin. Frozen in time.
+      Once event bit 3802 (COLORS_IN_HYRULE) is set, this Moblin will no longer be frozen in time.
+    64 - ? Skips doing some matrix related math among other things? Unused ingame.
+    FF - No lantern. Blue skin. Used in the Ganon's Tower Maze and debug test rooms.
+  params & 0000FF00 - For type 0F, this affects what animation to use when frozen in time.
+    00 - Frozen in an attacking pose.
+    01+ - Frozen in a walking pose.
+  params & 00FF0000 - Path index to follow, or FF for none.
+  params & FF000000 - Switch index to check and not appear until it is set.
+    If this is FF the Moblin will appear from the start.
+  aux_params_2 & 00FF - Disable spawn on death switch.
+    00 - Invalid switch, don't set or check.
+    FF - Defaults to 00 instead.
+    Read at BD38 in func daMo2_Create(fopAc_ac_c *)
+Keeth, Fkeeth: Keese. (d_a_ki)
+  params & 000000FF - Behavior type.
+    00 - Hanging from the ceiling until it notices the player
+    01 - Flying around in circles
+    02 - Launches like a cannonball
+      As soon as it spawns it will launch diagonally up as if shot from a cannon. It will be in the hanging upside down animation while it is launching.
+      After a second of being launched it starts acting normal and immediately targets the player.
+    03 - Immediately targets the player.
+    0A - Same as 03...? Never placed, probably a state
+    14 - Same as 03...? Never placed, probably a state
+    1E - Instantly plays its death animation twice when spawned.
+    80 - Hanging from the ceiling like type 00, but it never attacks the player.
+      Only used in test rooms.
+      Note: Invalid types (ones not in this list) act the same as type 80.
+    FF - Defaults to 00 instead.
+    Read at 44C4 in func daKi_Create(fopAc_ac_c *)
+    stored to entity+2CC,1 and then copied to entity+2D1,1
+  params & 00007F00 - Affects the range within it notices the player.
+    00 - 300.0
+    01 - 800.0
+    02 - 1500.0
+    03-7F - 3000.0
+  params & 00008000 - Boolean for whether this is a Fire Keese.
+  params & 00FF0000 - Path index to follow.
+  params & FF000000 - Enable spawn switch.
+Rdead1, Rdead2: ReDeads. (d_a_rd)
+  params & 00000001 - Affects which idle animation to use.
+    0 - Standing up. (Rdead1)
+    1 - Sitting down. (Rdead2)
+  params & 000000FE - This number plus 650.0 is the radius of the area it guards.
+    If it leaves this area, it will generally go back to its initial spawn point in the center of the area.
+    7F - Defaults to a range of 650.0.
+  params & 0000FF00 - Whether it should check the switch to enable its spawn.
+    00 - Do not appear until the switch at params & FF000000 is set. (If that switch is invalid, this ReDead will never appear.)
+    01-FF - ReDead appears from the start.
+      Out of this range, only FF is actually used.
+  params & FF000000 - Enable spawn switch.
+Tn: Darknut. (d_a_tn)
+  params & 0000000F - Behavior type.
+    0 - Starts roaming around immediately.
+    4 - Has a fixed range around its spawn point that it stays in and guards.
+    D - Mini-boss Darknut.
+      Plays the mini-boss music, does an animation when spawned, and plays a short event when killed.
+    E - Master Sword chamber Darknuts.
+      Can only be spawned by an event making them drop down from above.
+    F - Frozen Darknuts in Hyrule Castle.
+  params & 000000F0 - Armor color.
+    0 - Greenish silver with blue trim.
+    1 - Silver with red trim.
+    2 - Gold with black trim.
+    3 - White with silver trim.
+    4 - Black with brown trim.
+    5 - Red with gold trim.
+    6+ - Defaults to 5.
+    The RGB value for the main color of the armor for particles is in list prim$7755 (at E2AC in d_a_tn.rel).
+    The RGB value for the trim color of the armor for particles is in list env$7756 (at E2C4 in d_a_tn.rel).
+    For both of these lists, each entry is 4 bytes long - red, green, blue, and the 4th byte is unused.
+  params & 0000FF00 - Varies depending on type.
+    For type 04, this number multiplied by 10.0 is the radius of the area the Darknut guards.
+      If the player leaves this area, the Darknut will lose interest and go back to its spawn point.
+      FF - Defaults to a range of 500.0 instead.
+    For type 0F, this affects what animation to use when frozen in time.
+      00 - Frozen in a walking pose.
+      01+ - Frozen in an attacking pose.
+  params & 00FF0000 - Path index to follow.
+  params & FF000000 - Enable spawn switch.
+    FF - Invalid.
+  aux_params & 00E0 - Affects equipment.
+    0 - Normal, no special equipment.
+    1 - Has a full face helmet.
+    2 - Has a shield.
+    3 - Has a full face helmet and a shield.
+    4 - Has a shield and a cape.
+    5 - Has a full face helmet, a shield, and a cape.
+    6+ - Defaults to 5.
+  aux_params_2 & 00FF - Disable spawn on death switch.
+Oship: Gunboat/warship. (d_a_oship)
+  params & 000000FF - 
+  params & 00000F00 - Index of a triforce chart. The gunboat will only appear after the player has gotten this triforce chart deciphered.
+    0xF - Means don't check any triforce chart. Appear regardless.
+  params & 0000F000 - Random duplicate ID of this ship.
+    0-3, this is the same number that salvages use (at 803C4DA9).
+    0xF - Means no duplicate ID, this ship just always appears regardless of random salvage placement.
+  params & 00FF0000 - 
+  params & FF000000 - 
+  aux_params & 0x00FF - Switch index to check and not have this gunboat appear unless the switch is already set.
+VolTag: Ice Ring Isle and Fire Mountain kill triggers. (d_a_tag_volcano)
+  params & 0000003F - 
+  params & 000000C0 - Type?
+    0 - Outside either Fire Mountain or Ice Ring Isle
+    1 - Inside Fire Mountain
+    2 - Inside Ice Ring Isle
+  params & 0000FF00 - 
+  params & 00FF0000 - 
+Auzu: Whirlpool outside Jabun's cave. (d_a_obj_auzu)
+  params & 0x000000FF - ?
+  params & 0x0000FF00 - ?
+  params & 0x00010000 - ?
+  params & 0x00F00000 - ? Affects whether it disappears after Endless Night is over or not maybe?
+Stoudai: Lighthouse. (d_a_obj_light)
+  params: None.
+Figure: A figurine in the Nintendo Gallery. (d_a_obj_figure)
+  params & 0x000000FF - Figurine ID.
+    This is the index in the figurine data table (l_figure_dat_tbl of d_a_obj_figure).
+    Also, if you add this to decimal 14301 (0x37DD) you get the message ID of the message to display when the player examines this figurine.
+Ocanon: Wall-mounted cannon. (d_a_obj_canon)
+  params & 0x000000FF - 
+  params & 0x0000FF00 - Switch index to check and not have this cannon appear unless the switch is already set.
+  params & 0x00FF0000 - a room path index...?
+  params & 0xFF000000 - Switch index to set when destroyed.
+kusax1, kusax7, kusax21, flower, flwr7, flwr17, pflower, pflwrx7, swood, swood3, swood5, Grass: Vegetation. (d_a_grass)
+  params & 0x0000000F - ? possibly subtype
+    Index in list l_offsetData$4090 (entry length 8).
+    For example, kusax1 vs kusax7 or swood3 vs swood5 seem to have different values for this.
+  params & 0x00000030 - Type.
+    0 - Grass (kusa)
+    1 - Tree (swood)
+    2 - White Flower (flower)
+    3 - Pink Flower (pflower)
+  params & 0x00000FC0 - Affects what item(s) to spawn.
+    Valid values appear to be 0x20 to 0x3F. Other values seem to default to -1 (no item) instead.
+    This parameter gets passed as argument r4 to createItemFromTable when the object is cut down.
+    Subtract 0x20 from this parameter to get the index in the random item table. https://wiki.cloudmodding.com/tww/ItemTable.bin
+Puti: Miniblin. (d_a_pt)
+  params & 0x0000000F - Type.
+    0 - Respawning Miniblin.
+    1 - Single Miniblin.
+    F - Single Miniblin.
+  params & 0x00000010 - Initial spawn type.
+    0 - The Miniblin is spawned from the start, even if it's in view of the player's camera.
+      For respawning Miniblins, only the first one when you enter the room is spawned like this - respawned ones will still not spawn if in view of the player's camera.
+    1 - Only spawns when the player's camera is turned away from its spawn point.
+  params & 0x000000E0 - Controls the delay between the Miniblin respawning.
+    00-06 - The delay before respawning the Miniblin after the last one dies is (this_value*0x14)+0x14 frames.
+    07 - Use the initial spawn delay (from aux_params & FFFF) as the respawn delay too.
+    Read at 4988 in func daPt_Create(fopAc_ac_c *)
+  params & 0x0000FF00 - This number multiplied by 100.0 is the range within it will notice you and become active.
+    00 and FF do not default to anything.
+    Miniblins that haven't activated yet are invincible - so Miniblins with a range of 00 can never be killed for example.
+  params & 0x00FF0000 - Disable respawning switch / set on non-respawning death switch.
+    Once something sets this switch, respawning Miniblins will not respawn anymore.
+    If this switch index is a valid permanent switch and this is NOT a respawning Miniblin but a single one, it doesn't work properly.
+    The single Miniblin is coded to set this switch when it dies unlike the respawning Miniblin, but this switch being set doesn't disable its spawn when you exit and re-enter the room. So the single Miniblin just winds up being permanently deactivated and unkillable (and may be invisible too depending on params & 0x00000010).
+    But if you use a temporary switch here instead of a permanent mem bit, you can use this just fine to have the single Miniblin set it when it dies to activate something else.
+  params & 0xFF000000 - Enable spawn switch.
+    But there's also some weird case where it will set this switch itself...? If some static variable at 6146 in the rel is nonzero? Not sure if that behavior is actually used.
+    Read at 49D0 in func daPt_Create(fopAc_ac_c *)
+  aux_params & FFFF - Initial spawn delay.
+    This is the number of frames after the player enters the room before the first Miniblin will spawn.
+    Note that if the initial spawn type is set to spawned from the start, the Miniblin will be visible but inactive and invincible until this initial spawn delay is up.
+  Example params (shark island):
+    FF82FFFF
+    FF81FFFF
+    FF80FFFF
+    8588FFFF
+    878AFFFF
+    809BFFF0
+    898CFFFF
+    8E91FFFF
+    829DFFF0
+    9497FFFF
+    9396FFFF
+BigElf: Great Fairy. (d_a_bigelf)
+  params & 0x000000FF - Type. Which specific Great Fairy this is.
+  params & 0x0000FF00 - "Swbit"
+  params & 0x00FF0000 - "Swbit2"
+Zl1: Tetra. (d_a_npc_zl1)
+  params & 000000FF - Type?
+p_zelda: Princess Zelda. (d_a_pz)
+  params & 0000FF00 - ?
+    0xFF here defaults to 0 instead.
+    Seems to be a boolean
+pow: Poe. (d_a_pw)
+  params & 0x000000FF - Type.
+    00 - The Poe and its lantern are both visible from the start. The Poe starts wandering around on its own even before it notices the player.
+    01 - Both the Poe and its lantern are invisible at first, but become visible when the player gets close.
+    02 - At first the Poe is invisible but the lantern is visible. The Poe becomes visible when the player gets close.
+    03 - Jalhalla spawned Poe.
+    04 - Jalhalla spawned Poe.
+      Types 03 and 04 do not appear when placed in a level, they need to be created by fopAcM_createChild so they have have Jalhalla's entity ID available as their parent ID.
+      Also, I'm not sure how 03 and 04 are different from each other.
+    FF - Defaults to 00 instead.
+    If the value located at 803E75AA,2 is not 0, this value will be forcibly changed to (value at 803E75AA,2 minus 1).
+  params & 0x00000100 - How it floats.
+    0 - Will float down from its initial Y pos to the Y pos of the floor below it.
+      This type is never placed ingame. Jalhalla technically uses it for the Poes he spawns, but it doesn't seem to have any effect on them since they're never in their floating state.
+    1 - Will hover at its initial Y pos and not come down.
+    This bit is always set for placed Poes, but never for Poes spawned by Jalhalla.
+  params & 0x0000FE00 - Color.
+    0 - Blue
+    1 - Purple
+    2 - Orange
+    3 - Yellow
+    4 - Red
+    5 - Green
+    6+ - Defaults to 0 instead.
+  params & 0x00FF0000 - For type 2, this number multiplied by 10.0 is used as the range within the Poe will notice the player and materialize.
+    FF - Defaults to a range of 1000.0 (instead of 255*10.0).
+  params & 0xFF000000 - Path index to follow.
+    Can be FF for none.
+  The Poes created by Jalhalla have the following params:
+    FF000003
+    FF000004
+    Except the color param, which is a random number from 0-4 for the first Poe spawned, and then increases by 1 for each Poe after, looping back to 0 after it goes past 5.
+big_pow: Jalhalla. (d_a_bpw)
+  params & 0x000000FF - Type.
+    00 - Jalhalla.
+    01 - Jalhalla's lantern.
+    02 - Jalhalla's flame breath.
+    03+ - Curse effect over Link's head.
+    FF - Defaults to 00 instead.
+  params & 0x0000FF00 - 
+    00 - 
+    01 - 
+    FF - Defaults to 00 instead.
+  params & 0x00FF0000 - Switch index?
+    Jalhalla sets this switch, this switch +1, and this switch +2 in light_on_off.
+  aux_params_1 & FFFF - X rotation.
+  aux_params_2 & FFFF - Z rotation.
+Ls1: Aryll. (d_a_npc_ls1)
+  params & 0x000000FF - Type.
+    00 - On her lookout, after you have Hero's Clothes
+    01 - In FF1 tower
+    02 - In FF2 tower, and when being kidnapped on Outset's bridge
+    03 - On her lookout, before you have Hero's Clothes
+    04 - Ending cutscene
+p_hat, sea_hat: Peahats and Seahats.
+  params & 0x000000FF - Type.
+    00 - Peahat.
+    01 - Seahat.
+    FF - Defaults to 00 instead.
+    If the value located at 803E75AA,2 is not 0, this value will be forcibly changed to 01.
+  params & 0x0000FF00 - This number multiplied by 100.0 is the horizontal range within it will notice you (radius of the cylinder).
+    FF - Defaults to range of 1000.0 if this is a Peahat, or 12000.0 if this is a Seahat.
+  params & 0x00FF0000 - This number multiplied by 100.0 is the vertical range within it will notice you (half the height of the cylinder).
+    FF - Defaults to range of 500.0 if this is a Peahat, or 6000.0 if this is a Seahat.
+bable: Red Bubbles and Blue Bubbles. (d_a_bl)
+  params & 000000FF - Type.
+    00 - Red Bubble
+    01 - Blue Bubble
+    02 - Red Bubble that follows a path
+    03 - Blue Bubble that follows a path
+    80 - Just an inanimate, destructible skull. Used in the Jalhalla fight.
+    FF - Defaults to 00 instead.
+    If the value located at 803E75AA,2 is not 0, this value will be forcibly changed to (value at 803E75AA,2 minus 1).
+  params & 0000FF00 - Enable spawn switch index.
+  params & 00FF0000 - Path index to follow.
+  params & FF000000 - Boolean for whether this Bubble should stay high in the air.
+    00 - Will teleport itself down to the ground when spawned and float near there.
+    01 - Will float around the Y position it's placed at.
+    FF - Defaults to 00 instead.
+    If the value located at 803E75A8,2 is not 0, this value will be forcibly changed to 01.
+kuro_s, kuro_t: Morths. (d_a_ks)
+  params & 000000FF - Behavior type.
+    00 - Group of Morths that chase the player when the player moves.
+    01 - Group of Morths that stays in place. (kuro_t)
+      Ones that the player touches and then shakes off will then chase the player.
+    02 - Single Morth that stays in place.
+      Ones that the player touches and then shakes off will then chase the player.
+    03 - Single Morth that chases the player when the player moves.
+    04 - ? Don't seem to appear when placed? Unused ingame?
+    05 - ? Don't seem to appear when placed? Unused ingame?
+    06 - Morths in a pot.
+    FF - Defaults to 00.
+    Read at 3680 in func daKS_Create(fopAc_ac_c *)
+  params & 0000FF00 - Number of Morths to spawn.
+    00 - Defaults to 01.
+    16+ - Defaults to 01.
+  params & 00FF0000 - This number multiplied by 10.0 is the range around the pot that they will look for Link within and break out of the pot if they see him.
+    No effect on types besides 6.
+    FF - Defaults to 00.
+nezumi: Rats and Bombchus. (d_a_nz)
+  params & 000000FF - ??? I can't notice any effect this has ingame, but the code suggests that it's doing something.
+    00 - ? (most placed in the vanilla game use this)
+    01-FE - 
+      02 is the only value in this range actually used ingame, and even then it's only used once.
+    FF - Defaults to 00 instead.
+    If this is zero, and this is not a Bombchu, skip some code that relates to several things, including setting scale to 0...?
+    Read at 82FC in func daNZ_Create(fopAc_ac_c *)
+  params & 0000FF00 - Type.
+    00 - Rat
+    01 - Bombchu
+    FF - Defaults to 00 instead.
+  params & FF000000 - Unused.
+    This might have been intended to be a path index for the rat to follow, since the rat hole entity copies its params & FF000000 to the params & FF000000 of its spawned rats, and the rat hole's params & FF000000 appear to be a path index. But it doesn't actually do anything.
+nezuana: Hole that Rats or Bombchus come out of. (d_a_nzg)
+  params & 000000FF - This number multiplied by 10.0 multiplied by 0.5 is the range within it will check for the player and start spawning entities.
+  params & 0000FF00 - Maximum number of entities it can spawn.
+    00 - Defaults to 01 instead.
+  params & 00FF0000 - Type.
+    00 - Spawns Rats. Also spawns the Rat Shopkeeper that sells you things if you give it All-Purpose Bait.
+    01 - Spawns Bombchus.
+    02 - Spawns Rats and Bombchus.
+      It's a random 50% chance what each one will come out as.
+    03+ - Defaults to 00 instead.
+  params & FF000000 - Unused.
+    This seems like it was supposed to be a path index for something, maybe the path for its spawned entities to follow. But it doesn't actually do anything.
+  It gives the entities it creates the following params:
+    params & 000000FF - 01.
+    params & 0000FF00 - 00 for normal Rats, 01 for Bombchus.
+    params & FF000000 - Copied from this hole's params & FF000000.
+Fire, Zenfire: Ring of flames that prevents you from accessing something in the center of it. (d_a_fire)
+  params & 000000FF - Switch index to check.
+    If this is FF, and type is 0, change type to 2. The purpose of doing this might just be a way of avoiding the code that runs every frame for type 0 that checks if the switch is set yet, since there is no switch in this case?
+  params & 00000F00 - 
+  params & 0001F000 - 
+  params & 000E0000 - Type.
+    0 - Fire that disappears when a switch is set. (Fire)
+    1 - Fire that disappears when all enemies in the room are dead, like in Savage Labyrinth. (Zenfire)
+    2 - Fire that disappears after a switch is set.
+      Unlike type 0, this type does not disappear immediately if the switch is set when you are in the same room as the fire. The fire will simply not be there the next time the room is loaded.
+  params & 00F00000 - 
+Fmaster, Fmastr1, Fmastr2: Floormasters. (d_a_fm)
+  params & 000000FF - Where to take Link when he is captured.
+    Exit index in this room's SCLS list.
+    If this is FF, it will instead just take Link to the spawn with ID 0 in the current room.
+  params & 00000300 - Type.
+    0 - Not a fightable Floormaster. Black hole that appears briefly under Link after he is sent back to the beginning of a dungeon. (Fmaster)
+      Note that type 0 behaves differently if it has a valid prerequisite switch index (params & FF000000) specified, and that switch is turned on after the Floormaster is already spawned in. In this case, it triggers an unused behavior where the Floormaster follows underneath Link while submerged in the floor. This can be seen in test room KATA_RM/Room21.
+    1 - Moves along a path. (Fmastr1)
+    2 - Does not move along a path. (Fmastr2)
+    3 - Defaults to 0 instead.
+    (There may be more differences between Fmastr1 and Fmastr2 - they might drop different items when killed?)
+  params & 00000C00 - Targeting behavior type.
+    0 - Prioritizes targeting Medli or Makar if either of them are present, but will target Link if they are not.
+    1 - Targets Link, but does not target Medli or Makar.
+    2 - Targets Medli and Makar, but does not target Link. (Will still pull Link in if he stands on it for too long.)
+    3 - Defaults to 0 instead.
+  params & 00FF0000 - Path index to follow (for type 1).
+  params & FF000000 - Switch index to check and not appear until it is set.
+    If this is FF the Floormaster will appear from the start.
+  When the game engine spawns a Floormaster under Link after he is sent back to the beginning of a dungeon, the whole params field is set to 0.
+  aux_params_1 & 00FF - Switch index that, once it's set, this Floormaster will not appear anymore.
+  aux_params_1 & FF00 - Where to take Medli/Makar when they are captured.
+    Exit index in this stage's SCLS list.
+    (Note that this works different from the exit index param for capturing the player - that's in the room's exit list, this is in the stage's list.)
+    This is argument r4 to setPointRestart.
+  aux_params_2 & 00FF - This number multiplied by 100.0 is the range within it will notice you.
+    00 or FF - Defaults to range of 3000.0.
+Bb: Kargarocs. (d_a_bb)
+  params & 000000FF - Behavior type.
+    00 - Flying around.
+    01 - Flying around.
+    02 - Flying around.
+    03 - Immediately targets the player.
+    04 - Sits in place.
+    05 - Carries a Moblin, flying around.
+    06 - Carries a Bokoblin, flying around.
+    07 - Sits in place.
+    FF - Flying around.
+  params & 0000FF00 - This number multiplied by 100.0 is the range within it will notice you.
+    FF - Defaults to range of 1500.0 (instead of 255*100.0).
+  params & 00FF0000 - Path index to follow, or FF for none.
+    If a path is set, this prevents it from sitting in place even if its behavior type is set to do so.
+    If the path it's following has a next path defined, it seems the Kargaroc will move to the next path once it reaches the end of this path.
+  params & FF000000 - Switch index that must be set before this Kargaroc appears.
+    FF - This Kargaroc appears from the start.
+  aux_params_2 & 00FF - Disable spawn switch index. The Kargaroc will permanently disappear once something sets this switch.
+    00 - This Kargaroc never permanently disappears.
+    FF - Defaults to 00 instead.
+magtail: Magtails. (d_a_mt)
+  params & 000000FF - 
+    00-09 - Normal?
+    0A-FE - Ignores player??
+    If even, ???
+    If odd, ???
+    FF - Defaults to 00 instead.
+    Read at 860C in func daMt_Create(fopAc_ac_c *)
+  params & 00007F00 - Which movement pattern to use? Might only be for types 0A+?
+    00-0D - ?
+    0E+ - ?
+    Read at 8628 in func daMt_Create(fopAc_ac_c *)
+  params & 00008000 - Type.
+    0 - Single Magtail.
+      If the switch at aux_params_2 & 00FF is not 00 or FF, it will act as a disable spawn on death switch. The Magtail sets it when it dies and won't spawn when it's set.
+    1 - Can act as a Magtail spawner.
+      If the switch at aux_params_2 & 00FF is not 00, and is also not set, this will respawn Magtails one at a time at the placed position when you kill the last one.
+      If the switch at aux_params_2 & 00FF is 00, or it's not 00 but it's set, it acts as a single Magtail that doesn't respawn. (It doesn't set the switch when you kill them though.)
+  params & 00FF0000 - Path index to follow.
+    FF - No path.
+    Read at 8640 in func daMt_Create(fopAc_ac_c *)
+  params & FF000000 - Enable spawn switch index.
+    If set while in the same room as the Magtail, the Magtail will suddenly pop into existence.
+    FF - Invalid.
+    Read at 864C in func daMt_Create(fopAc_ac_c *)
+  aux_params_2 & 00FF - Disable spawn on death switch index.
+    00 or FF - Invalid.
+    Read at 8664 in func daMt_Create(fopAc_ac_c *)
+    Read at 869C in func daMt_Create(fopAc_ac_c *)
+amos: Armos Knights. (d_a_am)
+  params & 000000FF - Behavior type.
+    00 - Normal. Follows Link as far as it needs to and does not return to its spawn point.
+    01 - Has a fixed range around its spawn point that it stays in and guards.
+    FF - Defaults to 00 instead.
+    (Note that only the lowest bit actually matters, so all even numbers act as type 00 and all odd numbers except FF act as type 01.)
+    If the value located at 803E75AA,2 is not 0, this value will be forcibly changed to 01.
+  params & 0000FF00 - For type 01, this number multiplied by 10.0 is the radius of the area the Armos Knight guards.
+    If the player leaves this area, the Armos Knight will lose interest and go back to its spawn point.
+    If the player is outside of this range from the spawn point, the Armos Knight will turn around and go back to its spawn point.
+    00 - Defaults to range of 400.0 (instead of 0*100.0).
+    FF - Defaults to range of 400.0 (instead of 255*100.0).
+  params & 00FF0000 - Change switch behavior.
+    00 - The switch at params & FF000000, if it's valid, causes the Armos Knight to permanently disappear once it's set.
+    01 - If the switch at params & FF000000 is valid, the Armos Knight starts off inanimate, and the switch causes the Armos Knight to activate once it's set.
+    02+ - The switch at params & FF000000 has no effect.
+    FF - Defaults to 00 instead.
+  params & FF000000 - Switch index.
+    Variable behavior - see params & 00FF0000 for details.
+    FF - None. The Armos Knight is always normal, it never disappears or is inanimate.
+amos2: Armos. (d_a_am2)
+  params & 000000FF - Unused.
+    FF - Defaults to 00 instead.
+    If the value located at 803E75AA,2 is not 0, this value will be forcibly changed to 01.
+  params & 0000FF00 - This number multiplied by 100.0 is the range within it will notice you.
+    00 - Defaults to range of 600.0 (instead of 0*100.0).
+    FF - Defaults to range of 600.0 (instead of 255*100.0).
+  params & 00FF0000 - Change switch behavior.
+    00 - The switch at params & FF000000, if it's valid, causes the Armos to permanently disappear once it's set.
+    01 - If the the switch at params & FF000000 is valid, the Armos starts off inanimate, and the switch causes the Armos to activate once it's set.
+    FF - Defaults to 00 instead.
+    Read at 3FF8 in func daAM2_Create(fopAc_ac_c *)
+  params & FF000000 - Switch index.
+    Variable behavior - see params & 00FF0000 for details.
+    FF - None. The Armos is always normal, it never disappears or is inanimate.
+Gy: Gyorgs. (d_a_gy)
+  Will not appear until you have the Boomerang.
+  Will not appear if no Gyorg spawner (GyCtrl or GyCtrlB) is present.
+  aux_params & FFFF - X rotation.
+  aux_params_2 & FFFF - Z rotation.
+GyCtrl, GyCtrlB: Gyorg spawners. (d_a_gy_ctrl)
+  Will not appear until you have the Boomerang.
+  params & 0000000F - Type.
+    0 - Can follow you out of the sector. (GyCtrl)
+      Note that once a single cross-sector Gyorg spawner exists, more cross-sector Gyorg spawners will not load in to prevent an infinite number of them being created by exiting and re-entering a sector that has one placed.
+    1 - Stays within the sector it's placed in. (GyCtrlB)
+      This type might despawn its Gyorgs when they get close to Big Octos, Rafts or Fishmen?
+    F - Defaults to 0 instead.
+  params & 000000F0 - Number of Gyorgs to spawn.
+    F - Defaults to 1 instead.
+  params & 0000FF00 - This number multiplied by 1000.0 is the range within it will notice KoRL and start spawning Gyorgs.
+    FF - Defaults to a range of 10000.0 instead.
+  params & FF000000 - Switch index. The spawner will not start creating Gyorgs until this switch is set.
+    Unused in the vanilla game, but seems to work fine.
+Stal: Stalfos. (d_a_st)
+  params & 0000000F - Type.
+    0 - Normal.
+    1 - Underground.
+    2 - Lying inside a horizontal coffin.
+    3 - Standing inside a vertical coffin.
+    4-D - Normal.
+    E - Upper half of a Stalfos body only.
+      Never placed directly in the vanilla game.
+    F - Normal.
+    Read at 8CCC in func daSt_Create(fopAc_ac_c *)
+  params & 0000FF00 - When underground or in a coffin, this number multiplied by 10.0 is the range within it will notice the player and come out.
+    This has no effect for types that are not underground/in a coffin.
+    This also has no effect if switch index at params & FF000000 is valid.
+    FF - Defaults to a range of 500.0 instead.
+  params & 00FF0000 - Unused.
+  params & FF000000 - Switch index. When underground or in a coffin, if this switch is valid the Stalfos will appear when it is set.
+    FE and FF - Invalid. No switch is used to decide when to come out, and the distance to the player is used instead.
+  aux_params_2 & 00FF - Disable spawn on death switch index.
+    00 - Invalid, don't set a switch.
+    If this is from 01-7F, set bit 0x400 in bitfield at entity+0x1C4??
+    FF - Defaults to 00 instead.
+    Read at 8CFC in func daSt_Create(fopAc_ac_c *)
+bbaba: Boko Babas. (d_a_bo)
+  params & 000000FF - Type.
+    00 - Normal.
+    01 - The lower part of the Boko Baba's death animation.
+      This looks like a Baba Bud that quickly shrinks out of existence and is not usable.
+    02 - The upper part of the Boko baba's death animation.
+      This is the head and stem spinning through the air on defeat. When it lands, it turns into a Boko Stick.
+    03-FE - Bugged.
+      It's invisible, but it makes Boko Baba noises when you get close, and you can lock onto it.
+    FF - Defaults to 00 instead.
+  params & 0000FF00 - Baba Bud type.
+    00 - Does not leave a usable Baba Bud behind on death.
+    01-FE - Does leave a usable Baba Bud behind on death.
+    FF - Defaults to 00 instead.
+  When the Boko Baba dies, it creates the upper and lower parts of its death animation by creating Boko Baba entities that share this Boko Baba's params & FFFFFF00, but sets the lowest byte to 01 or 02 depending on which half of the death animation it is.
+Sss: Dexivines. (d_a_sss)
+  params & 000000FF - What SFX to play when coming out of the ground.
+    00 - Play SFX 0x58F7.
+    01 - Play SFX 0x58F8.
+    FF - Defaults to 00 instead.
+    The difference between the two SFXs, if any, is extremely subtle.
+  params & 0000FF00 - This number multiplied by 10.0 is used as a range within it notices the player and comes out of the ground.
+    FF - Defaults to a range of 1000.0.
+  params & 00FF0000 - Switch index. If this is valid the Dexivine will hide underground and not come out until the switch is set.
+    This switch checking behavior is never used in the vanilla game.
+    00 and FF - Invalid. Dexivine will come out of the ground when the player gets near.
+      Also, this causes 230.0 to be added to the initial Y position of the hand part - meaning it will start off above ground when spawned, slowly sink below ground, then when the player gets near it comes back up.
+Oq, Oqw: Octoroks. (d_a_oq)
+  params & 000000FF - Type.
+    00 - Freshwater Octorok.
+    01 - Saltwater Octorok that shoots once the player is a certain range away from it.
+    02 - Saltwater Octorok that appears close to the player (ignoring the position it was placed at). Also shoots the player after a certain delay.
+      This type is used for the Saltwater Octorok spawned by the salvage object after you salvage a vase.
+    03 - Saltwater Octorok spawner. Spawns type 05 Octoroks if the player is within a certain range of the spawner.
+    04 - Saltwater Octorok that shoots the player after a certain delay.
+    05 - Spawned Saltwater Octorok. Doesn't seem to appear when manually placed, must be created by type 03.
+    06 - Rock shot by a Freshwater Octorok.
+    FF - Defaults to 00 instead.
+    Read at 4844 in func daOQ_Create(fopAc_ac_c *)
+  params & 0000FF00 - Affects what Freshwater Octoroks shoot out of their mouth. No effect on Saltwater Octoroks?
+    00 - Freshwater Octorok that shoots rocks.
+    01 - Freshwater Octorok that shoots bombs.
+    02-FF - Defaults to 00.
+    If the value located at 803E75AA,2 is not 0, this value will be XORed with 01 to toggle it.
+  params & 00FF0000 - For type 3, this number multiplied by 1000.0 is the range within it will notice you and start spawning Octoroks.
+    00 or FF - Defaults to a range of 80000.0.
+LTag0, LTag1, LTagR0: Light ray. (d_a_tag_light)
+  params & 00000003 - Type?
+    0 - invisible? not a light ray but a thing that detects when a chest is being hit by light? (LTag0)
+    1 - light ray. (LTag1)
+    2 - (LTagR0)
+    Read at 0514 in func daTagLight::Act_c::_create( (void))
+  params & 00000300 (WARNING: overlaps)
+    Read at 0168 in func daTagLight::Act_c::get_cc_r( const(void))
+  params & 000003FC (WARNING: overlaps)
+    Read at 09F4 in func daTagLight::Act_c::chk_sw( const(void))
+  params & 00003C00 - affects the shape?
+    this/15.0 being >= 8.5/15.0 means use cylinder model. in other words:
+    0-8 - Use cone model
+    9-F - Use cylinder model
+    Read at 0230 in func daTagLight::Act_c::create_heap( (void))
+    Read at 0C0C in func daTagLight::Act_c::get_base_model_light_start_offset( (cXyz *))
+    Read at 0D24 in func daTagLight::Act_c::get_projection_info( (cXyz *, cXyz *, cXyz *, cXyz const *, cXyz const *))
+    Read at 17BC in func daTagLight::Act_c::make_projection_mtx( (cXyz const *, cXyz const *, cXyz const *, cXyz const *))
+    Read at 1B28 in func daTagLight::Act_c::set_spot_mtx( (void))
+  params & 0000C000
+    Read at 1D18 in func daTagLight::Act_c::_execute( (void))
+  params & 00FF0000
+    Read at 09E0 in func daTagLight::Act_c::chk_sw( const(void))
+    Read at 1C98 in func daTagLight::Act_c::_execute( (void))
+  params & FF000000
+    Read at 0AAC in func daTagLight::Act_c::chk_sch( const(void))
+  aux_params & FFFF - X rotation.
+  aux_params_2 & FFFF - Z rotation.
+Sitem: Nut hanging from a vine on the ceiling. (d_a_sitem)
+  params & 000000FF - Type of nut.
+    00 - Normal nut.
+    01 - Spiky nut.
+    02 - Acorn.
+    Read at 2B30 in func daSitem_Create(fopAc_ac_c *)
+  params & 0000FF00
+    Read at 2B4C in func daSitem_Create(fopAc_ac_c *)
+  params & 00FF0000
+    Read at 2B8C in func daSitem_Create(fopAc_ac_c *)
+  params & FF000000
+    Read at 2B6C in func daSitem_Create(fopAc_ac_c *)
+Kmon: Knight's Crest on Orca's shelf. (d_a_kmon)
+SWtact, SWtactB: Sets a switch when the player plays Wind's Requiem. (d_a_swtact)
+  params & 000000FF - Switch to set.
+  params & 0000FF00 - Wind direction to require, or FF for just playing Wind's Requiem without requiring a specific direction?
+  params & 000F0000 - ?
+    0 for SWtact, 1 for SWtactB
+ho: Firefly. (d_a_ff)
+  params & 000000FF - Number of fireflies to spawn in this group?
+  params & 0000FF00
+    00 for a group of fireflies, 01 for a single one that runs away??
+Pig: Pig. (d_a_kb)
+  params & 0000000F - Maybe color?
+    0 - 
+    1 - 
+    2 - Black?
+  params & 000000F0
+  params & 0000FF00 - Maybe caught vs uncaught on Outset?
+    00 - Uncaught?
+    01 - Caught?
+  params & 00FF0000
+  aux_params_2 & FFFF
+Cb1: Makar. (d_a_npc_cb1)
+  params & FFFFFFFF - Which instance of Makar this is.
+    2 - Makar in his cave behind the waterfall practicing violin.
+      For this Makar to appear, you need the following conditions to be met:
+        Full Power Master Sword (item 3E) is not owned
+        Event bit 2910 is not set
+        Event bit 2E02 is not set
+        Event bit 1610 is not set
+        Half Power Master Sword (item 3A) is owned
+
+### SCOB:
+Salvage, SwSlvg, Salvag2, SalvagN, SalvagE, SalvFM: Salvage points.
+  params & 0xF0000000 - Type.
+    0 - Main salvages that require a chart to see. (Salvage)
+    1 - ??? (Unused)
+    2 - Switch light ring salvage that only appears once a certain switch is set. (For e.g. Big Octos.) (SwSlvg)
+    3 - Normal light ring salvages. (Salvag2)
+    4 - Light ring salvages that only appears at night. (SalvagN)
+    5 - Salvage point where you fish up an old vase that causes a Saltwater Octorok to spawn near you. (SalvagE)
+    6 - Light ring salvages that only appear at night during a full moon. (SalvFM)
+  params & 0x00000FF0 - Item ID.
+  params & 0x0000000F - Type of the salvaged object.
+    This is passed as (params & 0x0000FF00) to the STBox on creation.
+    0 - Octorok vase?
+    1 - Chest 1?
+    2 - Chest 2?
+    TODO
+  params & 0x0FF00000 - Varies:
+    For type 0: Chart index+1 that reveals this salvage.
+    For type 1: No effect.
+    For types 2-4: Ocean salvage flag index for having salvaged this chest.
+      If this is 0x1F, it will always appear instead of disappearing after you get it once.
+    For type 5: No effect.
+    For type 6: Which event bit marks this salvage being taken.
+      This event bit will be set after salvaging and is checked to know if it should exist.
+      All of these event bits are cleared once per ingame week, on Friday.
+      0 - 2080
+      1 - 2004
+      2 - 2002
+      3 - 2804
+      4 - 2802
+      5 - 2801
+      6 - 2980
+      7 - 2940
+      8 - 3B01
+      9 - 3C80
+      A - 3C40
+      B - 3C20
+      C - 3C10
+      D - 3C08
+      E - 3C04
+      F - 3C02
+  aux_params_2 & 0x00FF - Varies:
+    For type 0: Duplicate ID of this salvage.
+      On starting a new game, your save file has a random number generated from 0-2 for which set of these salvages you get.
+      On starting new game+, it's always 3.
+      Only has an effect for salvage points that need a chart.
+      Note that the mask for this type is actually (aux_params_2 & 0x0003) instead of (aux_params_2 & 0x00FF).
+    For type 1: No effect.
+    For type 2: Switch to check and not appear until it is set.
+    For types 3-6: No effect.
+TagEv: Trigger region to cause an event to occur. (d_a_tag_event)
+  params & 0x000000FF - Type.
+    00 - 
+    01 - 
+    02 - 
+    03 - 
+    04 - 
+      Event works correctly if the player hits it while coming out of a door. (Sets bit 0001 of bitfield 803C9EC8,2.) (cancelShutter)
+    05 - 
+    06 - 
+    07 - 
+      Event works correctly if the player hits it while coming out of a door. (Sets bit 0001 of bitfield 803C9EC8,2.) (cancelShutter)
+    08 - 
+    09 - gets a password?
+    0A - 
+    0B - MjReady
+    0C - Invert enable spawn switch. This TagEv will not become active until that switch is NOT set.
+      Also ignores the event bit param at aux_params_2 & FFFF, it won't matter if that event bit is set or not.
+      Event works correctly if the player hits it while coming out of a door. (Sets bit 0001 of bitfield 803C9EC8,2.) (cancelShutter)
+    0D - 
+    FF - Normal type, starts the event when you enter the trigger region.
+      This checks the enable spawn switch and the enable spawn event bit to know when to become active.
+  params & 0x0000FF00 - The switch index to set when the event plays and disables this event from playing again.
+    Note that if something else sets this switch, the TagEv will become disabled without ever playing its event.
+  params & 0x00FF0000 - Switch index that must be set before this trigger region will appear.
+    FF - None, this region always appears.
+  params & 0xFF000000 - The event index to start, in this stage's EVNT list.
+  aux_params_2 & FFFF - Event bit that must be set for this trigger region to become active.
+    0000 or FFFF - Invalid, no event bit must be set.
+TagHt, TagHt2: Trigger region for a Pirate's Charm hint. (d_a_tag_hint)
+  params & 0x0000003F - "Type"?
+  params & 0x000000C0 - "Type2"?
+  params & 0x0000FF00 - Switch index to set and check for whether you've already seen this hint event.
+  params & 0x00FF0000 - Another switch index? (Swbit2)
+  params & 0xFF000000 - Event index? (EventNo)
+  aux_params_1 & 0xFFFF - Message ID of the text to show.
+  aux_params_2 & 0xFFFF - Event flag?
+TagKb: Trigger region for having the big pig dig up an item in black soil.
+  params & 0x000000FF - Item ID.
+  params & 0x0000FF00 - The item pickup flag to set.
+Akabe: Invisible wall. (d_a_obj_akabe)
+  params & 0x000000FF - Switch index to check for if this invisible wall should disappear yet.
+    FF - Special case that means the invisible wall should disappear when the player owns any sword.
+agbTBOX: Trigger for a Tingle Chest to appear. (Or maybe just any item, not necessarily a chest?) (d_a_agbsw0)
+agbA, agbAT, agbA2, agbF, agbF2, agbMARK, agbMW, agbCSW, agbR, agbB, agbD, agbFA: Other Tingle Tuner-related triggers. (d_a_agbsw0)
+  params & 0x0000FFFF - ?
+  params & 0x00FF0000 - Switch index to set when a Tingle bomb is used on this object.
+    The chest then has an appear condition set up so that it appears when this same switch is set.
+  params & 0xFF000000 - Switch index for ...?
+  aux_params & 0xFFFF - Type of trigger maybe? 9/A/B/C/D for the 5 types of tingle statues?
+  aux_params_2 & 0x00FF - 
+bonbori: Torch. (d_a_ep)
+  params & 0000003F - Type.
+    00 - Has brazier.
+    01 - Does not have brazier.
+    02 - Does not have brazier. Skips some particle code?
+    03 - Has brazier. Does not play event?
+    3F - Defaults to 00.
+    Read at 274C in func daEp_Create(fopAc_ac_c *)
+  params & 00000040
+    Read at 276C in func daEp_Create(fopAc_ac_c *)
+  params & 00000080
+    Read at 2778 in func daEp_Create(fopAc_ac_c *)
+  params & 0000FF00
+    Read at 2784 in func daEp_Create(fopAc_ac_c *)
+  params & 00FF0000
+    Read at 2790 in func daEp_Create(fopAc_ac_c *)
+  params & FF000000
+    Read at 279C in func daEp_Create(fopAc_ac_c *)
+
+### TGDR:
+door12, door12M, door12B, door13, door13M, door13B, keyS12, ZenS12: Door (TGDR type). (d_a_door12)
+  params & 0x000000FF - "Swbit"
+  params & 0x00000F00 - "Type"
+  params & 0x000FF000 - "EventNo"
+  params & 0x0FF00000 - "Swbit2"
+  aux_params & 0x003F - "FRoomNo"
+  aux_params & 0x0FC0 - "BRoomNo"
+  aux_params_2 & 0x003F - "ShipId" (unused?)
+  aux_params_2 & 0xFF00 - "Arg1"
